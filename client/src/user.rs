@@ -1,46 +1,8 @@
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
 use std::fs;
 use std::io::{self, Write};
-use uuid::Uuid;
 
-const USER_DATA_FILE: &str = "user_data.json";
-
-#[derive(Serialize, Deserialize)]
-pub struct ClientUser {
-    pub name: String,
-    pub id: String,
-}
-
-impl ClientUser {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            id: Uuid::new_v4().to_string(),
-        }
-    }
-}
-
-pub fn get_user() -> Option<ClientUser> {
-    if let Ok(data) = fs::read_to_string(USER_DATA_FILE) {
-        if let Ok(user) = serde_json::from_str::<ClientUser>(&data) {
-            return Some(user);
-        }
-    }
-    None
-}
-
-pub fn set_user(user: &ClientUser) {
-    if let Ok(data) = serde_json::to_string(user) {
-        fs::write(USER_DATA_FILE, data).expect("Unable to write user data");
-    }
-}
-
-pub fn set_id(id: &str) {
-    if let Some(mut user) = get_user() {
-        user.id = id.to_string();
-        set_user(&user);
-    }
-}
+use crate::config::{create_config, get_config, get_config_path, UserConfig};
 
 pub fn ask_for_username() -> String {
     let mut input = String::new();
@@ -50,4 +12,33 @@ pub fn ask_for_username() -> String {
         .read_line(&mut input)
         .expect("Failed to read line");
     input.trim().to_string()
+}
+
+pub fn get_user_or_create() -> Result<UserConfig> {
+    let user = match get_config() {
+        Ok(user) => user,
+        Err(_) => {
+            let name = ask_for_username();
+            let user = create_config(&name)?;
+            user
+        }
+    };
+
+    Ok(user)
+}
+
+pub fn set_user(user: &UserConfig) {
+    let path = get_config_path();
+    if let Ok(data) = serde_json::to_string(user) {
+        if let Ok(path) = path {
+            fs::write(path, data).expect("Unable to write user data");
+        }
+    }
+}
+
+pub fn set_id(id: &str) {
+    if let Ok(mut user) = get_user_or_create() {
+        user.id = id.to_string();
+        set_user(&user);
+    }
 }

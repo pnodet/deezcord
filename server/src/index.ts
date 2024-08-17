@@ -1,9 +1,27 @@
-import { Hono } from 'hono'
+import { Hono } from 'hono';
+import { createBunWebSocket } from 'hono/bun';
+import { initStunServer } from './stun';
+import { onMessage } from './commands';
 
-const app = new Hono()
+initStunServer();
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+const { upgradeWebSocket, websocket } = createBunWebSocket();
 
-export default app
+const app = new Hono();
+
+app.get(
+  '/ws',
+  upgradeWebSocket(_ctx => ({
+    onMessage,
+  })),
+);
+
+const port = 3030;
+
+console.log(`Listening on port ${port}`);
+
+Bun.serve({
+  fetch: app.fetch,
+  websocket,
+  port,
+});

@@ -1,11 +1,9 @@
+use crate::commands::CommandMessage;
 use futures_util::SinkExt;
-use signal::CommandMessage;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
-
-use crate::signal;
 
 pub async fn send_message(
     ws_stream: Arc<

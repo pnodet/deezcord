@@ -1,14 +1,13 @@
-#![allow(dead_code)]
-
+mod commands;
 mod config;
 mod connect;
-mod signal;
 mod socket;
 mod user;
 
+use crate::commands::wait_for_ack::wait_for_ack;
+use crate::commands::{ClientCommand, Command, CommandMessage, ServerCommand};
 use connect::{handle_answer, handle_ice_candidate, handle_offer, handle_refresh};
 use futures_util::StreamExt;
-use signal::{wait_for_ack, ClientCommand, Command, CommandMessage, ServerCommand};
 use socket::send_message;
 use std::collections::HashMap;
 use std::io::{stdout, Write};
@@ -17,7 +16,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio::time::{self, Duration};
 use tokio_tungstenite::connect_async;
-use user::{ask_for_username, get_user, set_id, set_user, ClientUser};
+use user::{get_user_or_create, set_id};
 use webrtc::peer_connection::RTCPeerConnection;
 
 const SERVER_URL: &str = "ws://localhost:3030/ws";
@@ -37,15 +36,7 @@ enum ConnectionState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let user = match get_user() {
-        Some(user) => user,
-        None => {
-            let name = ask_for_username();
-            let user = ClientUser::new(&name);
-            set_user(&user);
-            user
-        }
-    };
+    let user = get_user_or_create()?;
 
     let (ws_stream, _) = connect_async(SERVER_URL).await.expect("Failed to connect");
     let ws_stream = Arc::new(Mutex::new(ws_stream));
@@ -53,9 +44,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     send_message(
         ws_stream.clone(),
         &CommandMessage {
-            username: user.name.clone(),
-            room: "system".to_string(),
-            command: Command::Client(ClientCommand::Connect),
+            user_id: user.id.clone(),
+            command: Command::Client(ClientCommand::Connect(user.name.clone())),
         },
     )
     .await?;
@@ -76,9 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     send_message(
         ws_stream.clone(),
         &CommandMessage {
-            username: user.id.clone(),
-            room: ROOM_NAME.to_string(),
-            command: Command::Client(ClientCommand::Join),
+            user_id: user.id.clone(),
+            command: Command::Client(ClientCommand::Join(ROOM_NAME.to_string())),
         },
     )
     .await?;

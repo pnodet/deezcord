@@ -1,4 +1,5 @@
-use signal::{wait_for_ack, ClientCommand, Command, CommandMessage};
+use crate::commands::wait_for_ack::wait_for_ack;
+use crate::commands::{ClientCommand, Command, CommandMessage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -16,9 +17,7 @@ use webrtc::rtp_transceiver::rtp_codec::{
 };
 
 use crate::socket::send_message;
-use crate::{signal, ConnectionState, User};
-
-const ROOM_NAME: &str = "nivalis";
+use crate::{ConnectionState, User};
 
 pub async fn handle_refresh(
     user_list: Vec<String>,
@@ -96,8 +95,7 @@ pub async fn handle_refresh(
         println!("");
 
         let offer_message = &CommandMessage {
-            username: curr_id.to_string(),
-            room: ROOM_NAME.to_string(),
+            user_id: curr_id.to_string(),
             command: Command::Client(ClientCommand::SendOffer(other.clone(), local_desc)),
         };
 
@@ -109,11 +107,11 @@ pub async fn handle_refresh(
         println!("Offer sent to user {:?}", other);
 
         let ws_stream_clone = ws_stream.clone();
-        let username = curr_id.to_string();
+        let user_id = curr_id.to_string();
         let user = other.clone();
         peer_connection.on_ice_candidate(Box::new(move |candidate| {
             let ws_stream_clone = ws_stream_clone.clone();
-            let username = username.clone();
+            let user_id = user_id.clone();
             let user = user.clone();
             Box::pin(async move {
                 if let Some(candidate) = candidate {
@@ -122,8 +120,7 @@ pub async fn handle_refresh(
                     send_message(
                         ws_stream_clone.clone(),
                         &CommandMessage {
-                            username,
-                            room: ROOM_NAME.to_string(),
+                            user_id,
                             command: Command::Client(ClientCommand::SendIceCandidate(
                                 user,
                                 candidate_str,
@@ -183,8 +180,7 @@ pub async fn handle_offer(
     send_message(
         ws_stream,
         &CommandMessage {
-            username: username.to_string(),
-            room: ROOM_NAME.to_string(),
+            user_id: username.to_string(),
             command: Command::Client(ClientCommand::SendAnswer(from_user.clone(), local_desc)),
         },
     )
