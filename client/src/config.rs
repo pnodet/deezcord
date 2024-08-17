@@ -1,13 +1,13 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
-    io::{BufReader, BufWriter, Write},
+    fs::{self, File},
+    io::{self, BufReader, BufWriter, Write},
     path::PathBuf,
 };
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UserConfig {
     pub name: String,
     pub id: String,
@@ -32,14 +32,14 @@ pub fn get_config_path() -> Result<PathBuf> {
 
     let app_dir = app_data_dir.join("deezcord");
 
-    std::fs::create_dir_all(&app_dir).context("Couldn't create %APPDATA%/nivalis directory.")?;
+    fs::create_dir_all(&app_dir).context("Couldn't create %APPDATA%/nivalis directory.")?;
 
     Ok(app_dir.join("config.json"))
 }
 
 pub fn create_config(username: &str) -> Result<UserConfig> {
     let config_path = get_config_path()?;
-    let file = std::fs::OpenOptions::new()
+    let file = fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
@@ -69,5 +69,46 @@ pub fn get_config() -> Result<UserConfig> {
 #[allow(dead_code)]
 pub fn delete_config() -> Result<()> {
     let auth_config_path = get_config_path()?;
-    std::fs::remove_file(auth_config_path).context("Couldn't delete your config.")
+    fs::remove_file(auth_config_path).context("Couldn't delete your config.")
+}
+
+pub fn ask_for_username() -> String {
+    let mut input = String::new();
+    print!("Enter your name: ");
+    io::stdout().flush().unwrap();
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read line");
+    input.trim().to_string()
+}
+
+pub fn get_user_or_create() -> Result<UserConfig> {
+    let user = match get_config() {
+        Ok(user) => user,
+        Err(_) => {
+            let name = ask_for_username();
+            let user = create_config(&name)?;
+            user
+        }
+    };
+
+    Ok(user)
+}
+
+#[allow(dead_code)]
+pub fn set_user(user: &UserConfig) {
+    let path = get_config_path();
+    if let Ok(data) = serde_json::to_string(user) {
+        if let Ok(path) = path {
+            fs::write(path, data).expect("Unable to write user data");
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub fn set_id(id: &str) {
+    if let Ok(mut user) = get_user_or_create() {
+        user.id = id.to_string();
+        set_user(&user);
+    }
 }

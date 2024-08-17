@@ -16,7 +16,7 @@ pub async fn send_message(
     message: &CommandMessage,
 ) -> Result<(), Box<dyn Error>> {
     let msg_text = serde_json::to_string(&message)?;
-    println!("Sending message: {:?}", message.command); // Debug log
+    println!("\n\n *** Sending ***\n{:?}", message.command);
     let mut ws_stream = ws_stream.lock().await;
     ws_stream.send(Message::text(msg_text)).await?;
     Ok(())

@@ -1,5 +1,6 @@
 use crate::commands::wait_for_ack::wait_for_ack;
 use crate::commands::{ClientCommand, Command, CommandMessage};
+use crate::socket::send::send_message;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -16,7 +17,6 @@ use webrtc::rtp_transceiver::rtp_codec::{
     RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType,
 };
 
-use crate::socket::send_message;
 use crate::{ConnectionState, User};
 
 pub async fn handle_refresh(

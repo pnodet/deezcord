@@ -1,3 +1,5 @@
+import type { Room } from '../db';
+
 export type ServerCommandKeys =
   | 'Ack'
   | 'ConnectedAs'
@@ -11,7 +13,7 @@ export type ServerCommandData = {
   Ack: null;
   ConnectedAs: null;
   Refresh: null;
-  RoomList: null;
+  RoomList: Room[];
   SendOffer: null;
   SendAnswer: null;
   SendIceCandidate: null;

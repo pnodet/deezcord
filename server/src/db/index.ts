@@ -4,14 +4,14 @@ const db = new Database('deezcord.sqlite', { create: true, strict: true });
 
 db.run('PRAGMA journal_mode = WAL;');
 
-class User {
+export class User {
   id!: string;
   username!: string;
   alive!: boolean;
   roomId!: string;
 }
 
-class Room {
+export class Room {
   id!: string;
   name!: string;
   hostId!: string;
@@ -84,6 +84,30 @@ const setUserAliveQuery = db
 
 export const setUserAlive = (id: string, alive: boolean) =>
   setUserAliveQuery.get({ alive, id });
+
+const createRoomQuery = db
+  .query(
+    `
+  INSERT INTO rooms (name, hostId) VALUES ($roomname, $hostId) RETURNING *
+`,
+  )
+  .as(Room);
+
+export const createRoom = (hostId: string, roomname: string) =>
+  createRoomQuery.get({ roomname, hostId });
+
+const getRoomsQuery = db
+	.query(`
+		SELECT
+			id,
+			name,
+			hostId,
+			usersIds
+		FROM rooms
+	`)
+	.as(Room);
+
+export const getRooms = () => getRoomsQuery.all();
 
 const getRoomQuery = db
   .query(

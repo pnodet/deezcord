@@ -2,22 +2,22 @@ export type ClientCommandKeys =
   | 'Join'
   | 'Leave'
   | 'ListRooms'
+  | 'CreateRoom'
   | 'Connect'
   | 'SendOffer'
   | 'SendAnswer'
   | 'SendIceCandidate';
 
 export type ClientCommandData = {
+	ListRooms: null;
+	Connect: string;
+	CreateRoom: string;
   Join: {
     room: string;
   };
   Leave: {
     room: string;
   };
-  ListRooms: {
-    rooms: string[];
-  };
-  Connect: string;
   SendOffer: {
     user_id: string;
     sdp: RTCSessionDescription;

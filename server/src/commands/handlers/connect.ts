@@ -1,9 +1,10 @@
-import { createUser, getUserById, setUserAlive } from '../db';
 import type { WSContext } from 'hono/ws';
-import type { ClientCommand } from './mod-client';
+import { getUserById, createUser, setUserAlive } from '../../db';
+import { sendAck } from '../ack';
+import type { ClientCommand } from '../mod-client';
 
 export const handleConnect = (
-  _ws: WSContext,
+  ws: WSContext,
   cmd: ClientCommand<'Connect'>,
 ) => {
   const id = cmd.user_id;
@@ -16,5 +17,5 @@ export const handleConnect = (
     user = setUserAlive(id, true);
   }
 
-  console.debug({ user });
+	sendAck(ws, id);
 };

@@ -1,14 +1,17 @@
 use serde::{Deserialize, Serialize};
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
+use crate::rooms::Room;
+
 pub mod wait_for_ack;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ClientCommand {
+    Connect(String),
+    CreateRoom(String),
+    ListRooms,
     Join(String),
     Leave,
-    ListRooms,
-    Connect(String),
     SendOffer(String, RTCSessionDescription),
     SendAnswer(String, RTCSessionDescription),
     SendIceCandidate(String, String),
@@ -19,7 +22,7 @@ pub enum ServerCommand {
     Ack,
     ConnectedAs(String),
     Refresh(Vec<String>),
-    RoomList(Vec<String>),
+    RoomList(Vec<Room>),
     SendOffer(String, RTCSessionDescription),
     SendAnswer(String, RTCSessionDescription),
     SendIceCandidate(String, String),
