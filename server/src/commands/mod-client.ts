@@ -9,27 +9,28 @@ export type ClientCommandKeys =
   | 'SendIceCandidate';
 
 export type ClientCommandData = {
-	ListRooms: null;
-	Connect: string;
-	CreateRoom: string;
-  Join: {
-    room: string;
-  };
+  ListRooms: null;
+  Connect: string;
+  CreateRoom: string;
+  Join: string;
   Leave: {
     room: string;
   };
-  SendOffer: {
-    user_id: string;
-    sdp: RTCSessionDescription;
-  };
-  SendAnswer: {
-    user_id: string;
-    sdp: RTCSessionDescription;
-  };
-  SendIceCandidate: {
-    user_id: string;
-    candidate: string;
-  };
+  SendOffer: [
+    string, // user_id
+    string, // room_id
+    string, // sdp
+  ];
+  SendAnswer: [
+    string, // user_id
+    string, // room_id
+    string, // sdp
+  ];
+  SendIceCandidate: [
+    string, // user_id
+    string, // room_id
+    string, // candidate
+  ];
 };
 
 export type ClientCommand<K extends ClientCommandKeys> = {

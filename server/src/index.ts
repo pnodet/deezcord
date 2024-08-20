@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { initStunServer } from './stun';
 import { onMessage } from './commands';
+import { clearRooms, setAllUsersDead } from './db';
 
 initStunServer();
 
@@ -15,6 +16,9 @@ app.get(
     onMessage,
   })),
 );
+
+setAllUsersDead();
+clearRooms();
 
 const port = 3030;
 

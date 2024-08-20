@@ -5,18 +5,30 @@ export type ServerCommandKeys =
   | 'ConnectedAs'
   | 'Refresh'
   | 'RoomList'
-  | 'SendOffer'
-  | 'SendAnswer'
-  | 'SendIceCandidate';
+  | 'IncomingOffer'
+  | 'IncomingAnswer'
+  | 'IncomingIceCandidate';
 
 export type ServerCommandData = {
   Ack: null;
   ConnectedAs: null;
   Refresh: null;
   RoomList: Room[];
-  SendOffer: null;
-  SendAnswer: null;
-  SendIceCandidate: null;
+  IncomingOffer: [
+    string, // user_id
+    string, // room_id
+    string, // sdp
+  ];
+  IncomingAnswer: [
+    string, // user_id
+    string, // room_id
+    string, // sdp
+  ];
+  IncomingIceCandidate: [
+    string, // user_id
+    string, // room_id
+    string, // candidate
+  ];
 };
 
 export type ServerCommand<K extends ServerCommandKeys> = {

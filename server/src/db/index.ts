@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite';
+import { v7 as uuid } from 'uuid';
 
 const db = new Database('deezcord.sqlite', { create: true, strict: true });
 
@@ -8,17 +9,16 @@ export class User {
   id!: string;
   username!: string;
   alive!: boolean;
-  roomId!: string;
+  room_id!: string;
 }
 
 export class Room {
   id!: string;
   name!: string;
-  hostId!: string;
-  usersIds!: string;
+  users_ids!: string;
 
-  get users() {
-    return this.usersIds.split(',');
+  get users(): string[] {
+    return this.users_ids?.split(',') ?? [];
   }
 }
 
@@ -27,7 +27,7 @@ db.run(`
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL,
     alive BOOLEAN DEFAULT TRUE,
-    roomId TEXT
+    room_id TEXT
   )
 `);
 
@@ -35,8 +35,7 @@ db.run(`
   CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    hostId TEXT,
-    usersIds TEXT
+    users_ids TEXT
   )
 `);
 
@@ -58,6 +57,21 @@ const createUserQuery = db
 export const createUser = (id: string, username: string) =>
   createUserQuery.get({ id, username });
 
+const getUsersQuery = db
+  .query(
+    `
+  SELECT
+    id,
+    username,
+    alive,
+    room_id
+  FROM users
+`,
+  )
+  .as(User);
+
+export const getUsers = () => getUsersQuery.all();
+
 const getUserByIdQuery = db
   .query(
     `
@@ -65,7 +79,7 @@ const getUserByIdQuery = db
     id,
     username,
     alive,
-    roomId
+    room_id
   FROM users
   WHERE id = $id
 `,
@@ -82,32 +96,67 @@ const setUserAliveQuery = db
   )
   .as(User);
 
+const setAllUsersDeadQuery = db.query(
+  `
+  UPDATE users SET alive = false, room_id = null
+`,
+);
+
+export const setAllUsersDead = () => {
+  setAllUsersDeadQuery.run();
+};
+
 export const setUserAlive = (id: string, alive: boolean) =>
   setUserAliveQuery.get({ alive, id });
 
 const createRoomQuery = db
   .query(
     `
-  INSERT INTO rooms (name, hostId) VALUES ($roomname, $hostId) RETURNING *
+  INSERT INTO rooms (id, name, users_ids) VALUES ($id, $roomname, $usersIds) RETURNING *
 `,
   )
   .as(Room);
 
-export const createRoom = (hostId: string, roomname: string) =>
-  createRoomQuery.get({ roomname, hostId });
+export const createRoom = (userId: string, roomname: string): Room =>
+  ({
+    ...createRoomQuery.get({
+      id: uuid(),
+      roomname,
+      usersIds: userId,
+    }),
+    users: [userId],
+  }) as Room;
 
 const getRoomsQuery = db
-	.query(`
+  .query(
+    `
 		SELECT
 			id,
 			name,
-			hostId,
-			usersIds
+			users_ids
 		FROM rooms
-	`)
-	.as(Room);
+	`,
+  )
+  .as(Room);
 
-export const getRooms = () => getRoomsQuery.all();
+export const getRooms = () =>
+  getRoomsQuery
+    .all()
+    .map(room => ({ ...room, users: room.users_ids?.split(',') ?? [] }));
+
+const getRoomByIdQuery = db
+  .query(
+    `
+		SELECT
+			id,
+			name,
+			users_ids
+		FROM rooms WHERE id = $id
+	`,
+  )
+  .as(Room);
+
+export const getRoomById = (id: string) => getRoomByIdQuery.get({ id });
 
 const getRoomQuery = db
   .query(
@@ -115,8 +164,7 @@ const getRoomQuery = db
   SELECT
     id,
     name,
-    hostId,
-    usersIds
+    users_ids
   FROM rooms
   WHERE id = $id
 `,
@@ -124,6 +172,39 @@ const getRoomQuery = db
   .as(Room);
 
 export const getRoom = (id: string) => getRoomQuery.get({ id });
+
+const deleteRoomQuery = db
+  .query(
+    `
+	DELETE
+	FROM rooms
+	WHERE id = $id
+`,
+  )
+  .as(Room);
+
+const deleteRoom = (id: string) => deleteRoomQuery.run({ id });
+
+const addUserToRoomQuery = db
+  .query(
+    `
+		UPDATE rooms SET users_ids = $usersIds WHERE id = $roomId RETURNING *
+	`,
+  )
+  .as(Room);
+
+export const addUserToRoom = (roomId: string, userId: string) => {
+  const room = getRoomById(roomId);
+
+  if (!room) throw new Error('Room not found');
+
+  if (room.users.includes(userId)) return room;
+
+  return addUserToRoomQuery.get({
+    usersIds: [...room.users, userId].join(','),
+    roomId,
+  });
+};
 
 const getSharedSecretQuery = db.query(`
 	SELECT secret
@@ -145,6 +226,12 @@ export const setSharedSecret = (userId: string, secret: string) => {
     );
   } catch (error) {
     console.error('Error setting shared secret:', error);
+  }
+};
+
+export const clearRooms = () => {
+  for (const room of getRooms().filter(room => room.users.length === 0)) {
+    deleteRoom(room.id);
   }
 };
 

@@ -589,6 +589,7 @@ dependencies = [
  "cpal",
  "dirs",
  "futures-util",
+ "lazy_static",
  "opus",
  "rand",
  "rodio",

@@ -1,12 +1,19 @@
+use crate::connect::connect_to_room_user;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::stdin;
+use std::sync::mpsc::Sender;
 use std::{
     io::{stdout, Write},
     sync::Arc,
 };
-use termion::{async_stdin, raw::IntoRawMode};
+use termion::cursor::DetectCursorPos;
+use termion::raw::IntoRawMode;
 use termion::{event::Key, input::TermRead};
+use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
+use webrtc::peer_connection::RTCPeerConnection;
 
 use crate::{
     commands::{ClientCommand, Command, CommandMessage},
@@ -14,52 +21,150 @@ use crate::{
     socket::send::send_message,
 };
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Room {
     pub id: String,
     pub name: String,
     pub users: Vec<String>,
-    pub host_id: String,
 }
 
-pub fn display_room(room: Room) {
+pub fn display_room(room: Room, index: usize) {
     let mut stdout = stdout().into_raw_mode().unwrap();
-    write!(stdout, "\n\rRoom {} :", room.name).unwrap();
+    write!(stdout, "\n\r{}) Room {} :", index, room.name).unwrap();
+    stdout.flush().unwrap();
+
     for user in room.users {
-        write!(stdout, "\r- {}", user).unwrap();
+        write!(stdout, "\n\r- {}", user).unwrap();
+        stdout.flush().unwrap();
     }
-    stdout.flush().unwrap();
+
+    drop(stdout);
 }
 
-pub fn display_rooms(rooms: Vec<Room>) {
-    let mut stdout = stdout();
+pub async fn join_room(
+    room: Room,
+    user: Arc<UserConfig>,
+    peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
+    ws_stream: Arc<
+        tokio::sync::Mutex<
+            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+    >,
+) {
+    let mut stdout = stdout().into_raw_mode().unwrap();
+    write!(stdout, "\n\rJoining room {}\n\r", room.name).unwrap();
+    stdout.flush().unwrap();
+    drop(stdout);
+
+    connect_to_room_users(
+        room.clone(),
+        user.clone(),
+        peer_connections.clone(),
+        ws_stream.clone(),
+    )
+    .await;
+
+    let _ = send_message(
+        ws_stream.clone(),
+        &CommandMessage {
+            user_id: user.id.clone(),
+            command: Command::Client(ClientCommand::Join(room.id)),
+        },
+    )
+    .await;
+}
+
+pub async fn display_rooms(
+    rooms: Vec<Room>,
+    user: Arc<UserConfig>,
+    peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
+    ws_stream: Arc<
+        tokio::sync::Mutex<
+            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+    >,
+) {
+    let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+
+    write!(stdout, "\n\rAvailable rooms:\n\r").unwrap();
+    stdout.flush().unwrap();
+    drop(stdout);
+
+    for index in 0..rooms.len() {
+        let room: Room = rooms[index].clone();
+        display_room(room, index);
+    }
+
+    let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+    write!(stdout, "\n\r").unwrap();
+    stdout.flush().unwrap();
+    drop(stdout);
+
+    let stdin = stdin();
+
+    for key in stdin.keys() {
+        match key.unwrap() {
+            Key::Ctrl('c') => break,
+            Key::Char(key) => {
+                // Check if the key is a digit
+                if key.is_ascii_digit() {
+                    let index = key.to_digit(10).unwrap() as usize;
+                    if index < rooms.len() {
+                        let room: Room = rooms[index].clone();
+                        join_room(
+                            room,
+                            user.clone(),
+                            peer_connections.clone(),
+                            ws_stream.clone(),
+                        )
+                        .await;
+                        break;
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+pub async fn display_empty_room(
+    tx: Sender<()>,
+    user: Arc<UserConfig>,
+    ws_stream: Arc<
+        tokio::sync::Mutex<
+            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+    >,
+) {
+    let mut stdout = stdout().into_raw_mode().unwrap();
     write!(
         stdout,
-        "{}{}",
-        termion::cursor::Goto(1, 1),
-        termion::clear::All
+        "\rNo rooms found\n
+				\r - Press ctrl+n to create a new room
+				\r - Press ctrl+c to quit\n\r",
     )
     .unwrap();
 
-    for room in rooms {
-        display_room(room);
+    stdout.flush().unwrap();
+
+    let stdin = stdin();
+
+    for key in stdin.keys() {
+        match key.unwrap() {
+            Key::Ctrl('n') => {
+                let _ = create_room(user.clone(), ws_stream.clone()).await;
+                break;
+            }
+            Key::Ctrl('c') => {
+                let _ = tx.send(());
+                break;
+            }
+            _ => (),
+        }
     }
 
     stdout.flush().unwrap();
-}
-
-pub fn display_empty_room() {
-    let mut stdout = stdout();
-    write!(
-        stdout,
-        "\rNo rooms found
-				\n\r - Press ctrl+n to create a new room
-				\r - Press ctrl+r to refresh rooms
-				\r - Press ctrl+c or q to quit",
-    )
-    .unwrap();
-
-    stdout.flush().unwrap();
+    drop(stdout);
 }
 
 pub async fn create_room(
@@ -71,51 +176,41 @@ pub async fn create_room(
     >,
 ) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
-    write!(
-        stdout,
-        "{}{}{}Enter the room name:\n\r",
-        termion::cursor::Goto(1, 1),
-        termion::clear::All,
-        termion::cursor::Show
-    )
-    .unwrap();
+    write!(stdout, "\n\rEnter the room name:\n\r",).unwrap();
 
     stdout.flush().unwrap();
 
     let mut room_name = String::new();
 
-    let mut stdin = async_stdin().keys();
-
-    loop {
-        let key = stdin.next();
-
-        if let Some(Ok(key)) = key {
-            match key {
-                Key::Ctrl('c') | Key::Ctrl('q') | Key::Esc | Key::Char('\r') | Key::Char('\n') => {
-                    break
-                }
-
-                Key::Char(k) => {
-                    // Save the key to the room name
-                    room_name.push(k);
-                    write!(
-                        stdout,
-                        "{}{}{:?}",
-                        termion::clear::All,
-                        termion::cursor::Goto(1, 1),
-                        room_name
-                    )
-                    .unwrap();
-
-                    stdout.lock().flush().unwrap();
-                }
-
-                _ => (),
+    let stdin = stdin();
+    for key in stdin.keys() {
+        match key.unwrap() {
+            Key::Ctrl('c') => {
+                return Ok(());
             }
-        }
+            Key::Char('\n') => break,
+            Key::Char(k) => {
+                // Save the key to the room name
+                room_name.push(k);
+                let (_, y) = stdout.cursor_pos().unwrap();
+                write!(
+                    stdout,
+                    "{}{}{}",
+                    termion::clear::CurrentLine,
+                    termion::cursor::Goto(0, y),
+                    room_name
+                )
+                .unwrap();
 
-        stdout.flush().unwrap();
+                stdout.lock().flush().unwrap();
+            }
+
+            _ => (),
+        }
     }
+
+    stdout.flush().unwrap();
+    drop(stdout);
 
     let room_name = room_name.trim().to_owned();
 
@@ -129,4 +224,34 @@ pub async fn create_room(
     .await;
 
     Ok(())
+}
+
+pub async fn connect_to_room_users(
+    room: Room,
+    user: Arc<UserConfig>,
+    peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
+    ws_stream: Arc<
+        tokio::sync::Mutex<
+            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        >,
+    >,
+) {
+    if room.users.len() > 0 {
+        for index in 0..room.users.len() {
+            let other_id = room.users[index].clone();
+
+            if other_id == user.id {
+                continue;
+            }
+
+            connect_to_room_user(
+                user.id.clone(),
+                other_id,
+                room.id.clone(),
+                peer_connections.clone(),
+                ws_stream.clone(),
+            )
+            .await
+        }
+    }
 }

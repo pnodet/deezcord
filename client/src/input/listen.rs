@@ -1,4 +1,4 @@
-use std::io::{stdin, stdout, Write};
+use std::io::{stdout, Write};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use termion::async_stdin;
@@ -10,7 +10,7 @@ use tokio_tungstenite::WebSocketStream;
 use crate::config::UserConfig;
 use crate::rooms::create_room;
 
-pub async fn listen_for_input(
+pub async fn _listen_for_input(
     tx: Sender<()>,
     user: Arc<UserConfig>,
     ws_stream: Arc<

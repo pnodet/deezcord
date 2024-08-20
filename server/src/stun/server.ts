@@ -179,7 +179,7 @@ export class StunServer {
         {
           type: EAttributeType.Software,
           length: 21,
-          value: Buffer.from('STUN server by Sreeram').toString('hex'),
+          value: Buffer.from('STUN server').toString('hex'),
         },
       ],
     };
