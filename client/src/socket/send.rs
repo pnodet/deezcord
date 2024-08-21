@@ -19,7 +19,7 @@ pub async fn send_message(
 ) -> Result<(), Box<dyn Error>> {
     let msg_text = serde_json::to_string(&message)?;
     let mut stdout = stdout().into_raw_mode().unwrap();
-    write!(stdout, "\n\r*** Sending ***\n\r{:?}\n\r", message.command).unwrap();
+    // write!(stdout, "\n\r*** Sending ***\n\r{:?}\n\r", message.command).unwrap();
     stdout.flush().unwrap();
     drop(stdout);
 

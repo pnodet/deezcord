@@ -1,9 +1,8 @@
-use crate::connect::connect_to_room_user;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::stdin;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender};
 use std::{
     io::{stdout, Write},
     sync::Arc,
@@ -15,6 +14,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 use webrtc::peer_connection::RTCPeerConnection;
 
+use crate::peer::connect_peer::connect_peer;
 use crate::{
     commands::{ClientCommand, Command, CommandMessage},
     config::UserConfig,
@@ -50,7 +50,9 @@ pub async fn join_room(
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
         >,
     >,
-) {
+    watch_tx: tokio::sync::watch::Sender<()>,
+    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(stdout, "\n\rJoining room {}\n\r", room.name).unwrap();
     stdout.flush().unwrap();
@@ -61,8 +63,10 @@ pub async fn join_room(
         user.clone(),
         peer_connections.clone(),
         ws_stream.clone(),
+        watch_tx.clone(),
+        rx_audio.clone(),
     )
-    .await;
+    .await?;
 
     let _ = send_message(
         ws_stream.clone(),
@@ -72,6 +76,8 @@ pub async fn join_room(
         },
     )
     .await;
+
+    Ok(())
 }
 
 pub async fn display_rooms(
@@ -83,7 +89,9 @@ pub async fn display_rooms(
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
         >,
     >,
-) {
+    watch_tx: tokio::sync::watch::Sender<()>,
+    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+) -> Result<()> {
     let mut stdout = std::io::stdout().into_raw_mode().unwrap();
 
     write!(stdout, "\n\rAvailable rooms:\n\r").unwrap();
@@ -116,8 +124,10 @@ pub async fn display_rooms(
                             user.clone(),
                             peer_connections.clone(),
                             ws_stream.clone(),
+                            watch_tx.clone(),
+                            rx_audio.clone(),
                         )
-                        .await;
+                        .await?;
                         break;
                     }
                 }
@@ -125,6 +135,8 @@ pub async fn display_rooms(
             _ => (),
         }
     }
+
+    Ok(())
 }
 
 pub async fn display_empty_room(
@@ -135,7 +147,7 @@ pub async fn display_empty_room(
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
         >,
     >,
-) {
+) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(
         stdout,
@@ -165,6 +177,8 @@ pub async fn display_empty_room(
 
     stdout.flush().unwrap();
     drop(stdout);
+
+    Ok(())
 }
 
 pub async fn create_room(
@@ -235,7 +249,9 @@ pub async fn connect_to_room_users(
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
         >,
     >,
-) {
+    watch_tx: tokio::sync::watch::Sender<()>,
+    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+) -> Result<()> {
     if room.users.len() > 0 {
         for index in 0..room.users.len() {
             let other_id = room.users[index].clone();
@@ -244,14 +260,18 @@ pub async fn connect_to_room_users(
                 continue;
             }
 
-            connect_to_room_user(
+            connect_peer(
                 user.id.clone(),
                 other_id,
                 room.id.clone(),
                 peer_connections.clone(),
                 ws_stream.clone(),
+                watch_tx.clone(),
+                rx_audio.clone(),
             )
-            .await
+            .await?;
         }
     }
+
+    Ok(())
 }

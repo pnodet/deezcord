@@ -7,10 +7,29 @@ use std::{
 };
 use uuid::Uuid;
 
+/// User capabilities
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UserCapabilities {
+    pub audio: bool,
+    pub video: bool,
+    pub screenshare: bool,
+}
+
+impl Default for UserCapabilities {
+    fn default() -> Self {
+        Self {
+            audio: true,
+            video: true,
+            screenshare: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UserConfig {
     pub name: String,
     pub id: String,
+    pub capabilities: UserCapabilities,
 }
 
 impl From<&str> for UserConfig {
@@ -18,6 +37,7 @@ impl From<&str> for UserConfig {
         UserConfig {
             name: name.to_string(),
             id: Uuid::new_v4().to_string(),
+            capabilities: UserCapabilities::default(),
         }
     }
 }

@@ -1,7 +1,8 @@
+mod audio;
 mod commands;
 mod config;
-mod connect;
 mod input;
+mod peer;
 mod rooms;
 mod socket;
 

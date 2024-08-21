@@ -586,6 +586,7 @@ name = "deezcord"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "cpal",
  "dirs",
  "futures-util",
@@ -593,6 +594,7 @@ dependencies = [
  "opus",
  "rand",
  "rodio",
+ "rtp",
  "serde",
  "serde_json",
  "termion",
