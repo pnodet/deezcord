@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     fs::{self, File},
     io::{self, BufReader, BufWriter, Write},
     path::PathBuf,
@@ -115,6 +116,24 @@ pub fn get_user_or_create() -> Result<UserConfig> {
     Ok(user)
 }
 
+/// Environment variable that, when set to `1`, makes the client use a throwaway user
+/// that is never written to disk (so two clients can run on one machine).
+const EPHEMERAL_ENV: &str = "DEEZCORD_EPHEMERAL";
+
+fn is_ephemeral(value: Option<&OsStr>) -> bool {
+    value == Some(OsStr::new("1"))
+}
+
+/// The user for this run: a fresh in-memory user when `DEEZCORD_EPHEMERAL=1`,
+/// otherwise the saved config (asking for a name and saving it on first launch).
+pub fn load_user() -> Result<UserConfig> {
+    if is_ephemeral(std::env::var_os(EPHEMERAL_ENV).as_deref()) {
+        return Ok(UserConfig::from("guest"));
+    }
+
+    get_user_or_create()
+}
+
 #[allow(dead_code)]
 pub fn set_user(user: &UserConfig) {
     let path = get_config_path();
@@ -130,5 +149,19 @@ pub fn set_id(id: &str) {
     if let Ok(mut user) = get_user_or_create() {
         user.id = id.to_string();
         set_user(&user);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ephemeral_only_when_set_to_1() {
+        assert!(is_ephemeral(Some(OsStr::new("1"))));
+        assert!(!is_ephemeral(None));
+        assert!(!is_ephemeral(Some(OsStr::new(""))));
+        assert!(!is_ephemeral(Some(OsStr::new("0"))));
+        assert!(!is_ephemeral(Some(OsStr::new("true"))));
     }
 }
