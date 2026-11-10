@@ -2,6 +2,7 @@ use crate::audio::receive::receive_audio;
 use crate::audio::send::send_audio;
 use crate::commands::{ClientCommand, Command, CommandMessage};
 use crate::peer::create::create_peer_connection;
+use crate::peer::handle_ice_candidate::apply_buffered_candidates;
 use crate::socket::send::send_message;
 use crate::socket::WsWriter;
 use anyhow::Result;
@@ -89,20 +90,9 @@ pub async fn handle_offer(
 
     peer_connections.insert(from_user.clone(), Arc::clone(&peer_connection));
 
-    peer_connection.set_remote_description(offer).await.unwrap();
+    peer_connection.set_remote_description(offer).await?;
 
-    let mut ice_candidates = ice_candidates.lock().await;
-
-    let user_ice_candidates = ice_candidates.get_mut(&from_user);
-
-    if let Some(user_ice_candidates) = user_ice_candidates {
-        for candidate in user_ice_candidates {
-            peer_connection
-                .add_ice_candidate(candidate.clone())
-                .await
-                .unwrap();
-        }
-    }
+    apply_buffered_candidates(&from_user, &peer_connection, &ice_candidates).await?;
 
     peer_connection.on_peer_connection_state_change(Box::new(move |state| {
         println!("\n\rPeer connection state changed to {:?}", state);
@@ -138,6 +128,42 @@ pub async fn handle_offer(
             Box::pin(async {})
         },
     ));
+
+    // Trickle our candidates to the offerer, like `connect_peer` does on its side.
+    // Registered before `set_local_description`, which starts ICE gathering.
+    let local_user_id = username.to_string();
+    let offerer_id = from_user.clone();
+    let candidate_room_id = room_id.clone();
+    let candidate_ws_stream = Arc::clone(&ws_stream);
+
+    peer_connection.on_ice_candidate(Box::new(move |candidate| {
+        let local_user_id = local_user_id.clone();
+        let offerer_id = offerer_id.clone();
+        let room_id = candidate_room_id.clone();
+        let ws_stream = Arc::clone(&candidate_ws_stream);
+
+        Box::pin(async move {
+            // `None` marks the end of gathering; the answerer has nothing to do then.
+            let Some(candidate) = candidate else {
+                return;
+            };
+
+            let candidate_str = serde_json::to_string(&candidate.to_json().unwrap()).unwrap();
+
+            let ice_candidate_message = CommandMessage {
+                user_id: local_user_id,
+                command: Command::Client(ClientCommand::SendIceCandidate(
+                    offerer_id,
+                    room_id,
+                    candidate_str,
+                )),
+            };
+
+            if let Err(e) = send_message(ws_stream, &ice_candidate_message).await {
+                eprintln!("\n\rFailed to send ICE candidate: {e}");
+            }
+        })
+    }));
 
     let answer = peer_connection
         .create_answer(Some(RTCAnswerOptions {
