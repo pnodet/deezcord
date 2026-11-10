@@ -1,27 +1,18 @@
-use crate::audio::receive::receive_audio;
-use crate::audio::send::send_audio;
 use crate::commands::{ClientCommand, Command, CommandMessage};
 use crate::peer::create::create_peer_connection;
 use crate::socket::send::send_message;
 use crate::socket::WsWriter;
 use anyhow::Result;
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::io::stdout;
 use std::io::Write;
-use std::sync::mpsc::Receiver;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use webrtc::api::media_engine::MIME_TYPE_OPUS;
+use tokio::sync::{broadcast, Mutex};
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::ice_transport::ice_connection_state::RTCIceConnectionState;
 use webrtc::peer_connection::offer_answer_options::RTCOfferOptions;
 use webrtc::peer_connection::RTCPeerConnection;
-use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
-use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
-use webrtc::rtp_transceiver::RTCRtpTransceiver;
-use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
-use webrtc::track::track_local::TrackLocal;
-use webrtc::track::track_remote::TrackRemote;
 
 pub async fn connect_peer(
     user_id: String,
@@ -30,51 +21,14 @@ pub async fn connect_peer(
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
     ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
-    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+    audio_tx: broadcast::Sender<Bytes>,
 ) -> Result<()> {
-    let peer_connection = create_peer_connection(rx_audio.clone()).await.unwrap();
+    let peer_connection = create_peer_connection(&audio_tx).await?;
 
     let _ = peer_connection
         .create_data_channel("data", None)
         .await
         .unwrap();
-
-    peer_connection
-        .add_transceiver_from_kind(
-            webrtc::rtp_transceiver::rtp_codec::RTPCodecType::Audio,
-            None,
-        )
-        .await?;
-
-    println!("Setting up audio for {:?}", peer_connection.get_stats_id());
-
-    let audio_track = Arc::new(TrackLocalStaticRTP::new(
-        RTCRtpCodecCapability {
-            mime_type: MIME_TYPE_OPUS.to_owned(),
-            channels: 2,
-            clock_rate: 48000,
-            ..Default::default()
-        },
-        "audio_track".to_owned(),
-        "webrtc-rs".to_owned(),
-    ));
-
-    if let Err(e) = peer_connection
-        .add_track(Arc::clone(&audio_track) as Arc<dyn TrackLocal + Send + Sync>)
-        .await
-    {
-        eprintln!("Failed to add track: {:?}", e);
-        return Err(e.into());
-    }
-
-    let rx_audio = Arc::clone(&rx_audio);
-    tokio::spawn(send_audio(
-        peer_connection.clone(),
-        rx_audio.clone(),
-        audio_track.clone(),
-    ));
-
-    receive_audio(&peer_connection).await;
 
     let mut peer_connections = peer_connections.lock().await;
 
@@ -107,16 +61,6 @@ pub async fn connect_peer(
         println!("\n\rNegotiation needed");
         Box::pin(async {})
     }));
-
-    peer_connection.on_track(Box::new(
-        move |track: Arc<TrackRemote>,
-              _receiver: Arc<RTCRtpReceiver>,
-              _transceiver: Arc<RTCRtpTransceiver>| {
-            println!("\n\rReceived remote track: {:?}", track.ssrc());
-
-            Box::pin(async {})
-        },
-    ));
 
     let user_id_cloned = user_id.clone();
     let other_id_cloned = other_id.clone();

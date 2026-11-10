@@ -1,4 +1,3 @@
-use crate::audio::capture::capture_audio;
 use crate::commands::{Command, CommandMessage, ServerCommand};
 use crate::config::UserConfig;
 use crate::peer::{
@@ -9,15 +8,13 @@ use crate::rooms::{display_empty_room, display_room, display_rooms};
 use crate::socket::{WsReader, WsWriter};
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::io::{stdout, Write};
-use std::sync::mpsc::{self, Sender};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use tokio::sync::{watch, Mutex};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use tokio::sync::{broadcast, watch, Mutex};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::{sdp::session_description::RTCSessionDescription, RTCPeerConnection};
 
@@ -26,19 +23,13 @@ pub async fn listen_for_ws(
     user: Arc<UserConfig>,
     mut ws_read: WsReader,
     ws_stream: WsWriter,
+    audio_tx: broadcast::Sender<Bytes>,
 ) -> Result<()> {
     let peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
     let ice_candidates: Arc<Mutex<HashMap<String, Vec<RTCIceCandidateInit>>>> =
         Arc::new(Mutex::new(HashMap::new()));
-
-    let (tx_audio, rx_audio): (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) = mpsc::channel();
-
-    let rx_audio = Arc::new(Mutex::new(rx_audio));
-    let tx_audio = Arc::new(Mutex::new(tx_audio));
-
-    let audio_capture_started = Arc::new(AtomicBool::new(false));
 
     let (watch_tx, mut watch_rx) = watch::channel(());
 
@@ -47,12 +38,6 @@ pub async fn listen_for_ws(
             println!("\n\rAudio capture changed");
         }
     });
-
-    if !audio_capture_started.load(Ordering::SeqCst) {
-        println!("\n\rStarting audio capture");
-        audio_capture_started.store(true, Ordering::SeqCst);
-        tokio::spawn(capture_audio(tx_audio));
-    }
 
     loop {
         let mut stdout = stdout();
@@ -123,7 +108,7 @@ pub async fn listen_for_ws(
                         peer_connections.clone(),
                         ws_stream.clone(),
                         watch_tx.clone(),
-                        rx_audio.clone(),
+                        audio_tx.clone(),
                     )
                     .await
                 }
@@ -165,7 +150,7 @@ pub async fn listen_for_ws(
                             ice_candidates.clone(),
                             ws_stream.clone(),
                             watch_tx.clone(),
-                            rx_audio.clone(),
+                            audio_tx.clone(),
                         )
                         .await
                     }

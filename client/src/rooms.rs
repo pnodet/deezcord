@@ -1,8 +1,9 @@
 use anyhow::Result;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::stdin;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Sender;
 use std::{
     io::{stdout, Write},
     sync::Arc,
@@ -10,7 +11,7 @@ use std::{
 use termion::cursor::DetectCursorPos;
 use termion::raw::IntoRawMode;
 use termion::{event::Key, input::TermRead};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 use webrtc::peer_connection::RTCPeerConnection;
 
 use crate::peer::connect_peer::connect_peer;
@@ -47,7 +48,7 @@ pub async fn join_room(
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
     ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
-    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+    audio_tx: broadcast::Sender<Bytes>,
 ) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(stdout, "\n\rJoining room {}\n\r", room.name).unwrap();
@@ -60,7 +61,7 @@ pub async fn join_room(
         peer_connections.clone(),
         ws_stream.clone(),
         watch_tx.clone(),
-        rx_audio.clone(),
+        audio_tx.clone(),
     )
     .await?;
 
@@ -82,7 +83,7 @@ pub async fn display_rooms(
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
     ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
-    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+    audio_tx: broadcast::Sender<Bytes>,
 ) -> Result<()> {
     let mut stdout = std::io::stdout().into_raw_mode().unwrap();
 
@@ -117,7 +118,7 @@ pub async fn display_rooms(
                             peer_connections.clone(),
                             ws_stream.clone(),
                             watch_tx.clone(),
-                            rx_audio.clone(),
+                            audio_tx.clone(),
                         )
                         .await?;
                         break;
@@ -227,7 +228,7 @@ pub async fn connect_to_room_users(
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
     ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
-    rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
+    audio_tx: broadcast::Sender<Bytes>,
 ) -> Result<()> {
     if room.users.len() > 0 {
         for index in 0..room.users.len() {
@@ -244,7 +245,7 @@ pub async fn connect_to_room_users(
                 peer_connections.clone(),
                 ws_stream.clone(),
                 watch_tx.clone(),
-                rx_audio.clone(),
+                audio_tx.clone(),
             )
             .await?;
         }

@@ -1,52 +1,44 @@
-use anyhow::Result;
 use bytes::Bytes;
-use rtp::packet::Packet;
-use std::{
-    io::Write,
-    sync::{mpsc::Receiver, Arc},
-};
-use tokio::sync::Mutex;
-use webrtc::track::track_local::TrackLocalWriter;
-use webrtc::{
-    peer_connection::RTCPeerConnection,
-    track::track_local::track_local_static_rtp::TrackLocalStaticRTP,
-};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::broadcast::{self, error::RecvError};
+use webrtc::media::Sample;
+use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
+use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
+/// Forwards encoded microphone frames to one peer until the capture channel closes or the
+/// connection is closed/failed. `write_sample` builds the RTP packets (sequence numbers,
+/// timestamps, payload type).
 pub async fn send_audio(
     peer_connection: Arc<RTCPeerConnection>,
-    rx: Arc<Mutex<Receiver<Vec<u8>>>>,
-    audio_track: Arc<TrackLocalStaticRTP>,
-) -> Result<()> {
-    println!("Sending audio to {:?}", peer_connection.get_stats_id());
-    std::io::stdout().flush().unwrap();
-
-    let rx = rx.lock().await;
-    let mut sequence_number: u16 = 0;
-    let mut timestamp: u32 = 0;
-
-    while let Ok(audio_data) = rx.recv() {
-        let packet = Packet {
-            header: rtp::header::Header {
-                version: 2,
-                padding: false,
-                extension: false,
-                marker: false,
-                payload_type: 111,
-                sequence_number,
-                timestamp,
-                ssrc: 200566587,
-                ..Default::default()
-            },
-            payload: Bytes::from(audio_data),
+    track: Arc<TrackLocalStaticSample>,
+    mut frames: broadcast::Receiver<Bytes>,
+) {
+    loop {
+        let data = match frames.recv().await {
+            Ok(data) => data,
+            Err(RecvError::Lagged(_)) => continue,
+            Err(RecvError::Closed) => return,
         };
 
-        if let Err(e) = audio_track.write_rtp(&packet).await {
-            eprintln!("Failed to write sample: {:?}", e);
+        // write_sample returns Ok while the track is unbound (before connecting and after
+        // close), so the connection state is what ends this task.
+        if matches!(
+            peer_connection.connection_state(),
+            RTCPeerConnectionState::Closed | RTCPeerConnectionState::Failed
+        ) {
+            return;
         }
 
-        sequence_number = sequence_number.wrapping_add(1);
-        timestamp = timestamp.wrapping_add(960); // 960 =r 20ms of Opus at 48kHz
+        let sample = Sample {
+            data,
+            duration: Duration::from_millis(20),
+            ..Default::default()
+        };
+        if let Err(e) = track.write_sample(&sample).await {
+            eprintln!("\n\rStopped sending audio: {e}");
+            return;
+        }
     }
-
-    Ok(())
 }
