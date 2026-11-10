@@ -2,8 +2,11 @@
 // The client checks the same files in client/src/commands/mod.rs.
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from 'bun:test';
+import { beforeEach, expect, test } from 'bun:test';
+import { db, setUserRoom } from '../db';
 import { onMessage } from '.';
+import { sockets } from './send';
+import type { Session } from '.';
 import type { WSContext, WSMessageReceive } from 'hono/ws';
 import type { ClientCommand } from './mod-client';
 import type { ServerCommand } from './mod-server';
@@ -64,7 +67,6 @@ const serverMessages = {
           {
             id: 'room-1',
             name: 'lobby',
-            users_ids: 'user-a,user-b',
             users: ['user-a', 'user-b'],
           },
         ],
@@ -87,32 +89,51 @@ const serverMessages = {
   } satisfies ServerCommand<'IncomingIceCandidate'>,
 };
 
+// One fake connection: what the server sends to it, and its per-socket state.
 const fakeSocket = () => {
   const sent: unknown[] = [];
-  const published: unknown[] = [];
   const ws = {
     send: (data: string) => {
       sent.push(JSON.parse(data));
     },
-    raw: {
-      subscribe: () => {},
-      publish: (_topic: string, data: string) => {
-        published.push(JSON.parse(data));
-
-        return data.length;
-      },
-    },
+    close: () => {},
   } as unknown as WSContext;
+  const session: Session = { userId: null };
 
-  return { ws, sent, published };
+  return { ws, sent, session };
 };
 
-const receive = (ws: WSContext, fixtureName: string) => {
+type FakeSocket = ReturnType<typeof fakeSocket>;
+
+const receive = (socket: FakeSocket, data: string) => {
   onMessage(
-    { data: readFixture(fixtureName) } as MessageEvent<WSMessageReceive>,
-    ws,
+    { data } as MessageEvent<WSMessageReceive>,
+    socket.ws,
+    socket.session,
   );
 };
+
+// A fake socket that has already sent Connect (its Ack is discarded).
+const connected = (userId: string) => {
+  const socket = fakeSocket();
+
+  receive(
+    socket,
+    JSON.stringify({
+      user_id: userId,
+      command: { Client: { Connect: userId } },
+    }),
+  );
+  socket.sent.length = 0;
+
+  return socket;
+};
+
+beforeEach(() => {
+  sockets.clear();
+  db.run('DELETE FROM users');
+  db.run('DELETE FROM rooms');
+});
 
 test('every fixture file has a typed message and vice versa', () => {
   expect(readdirSync(FIXTURES_DIR).sort()).toEqual(
@@ -128,19 +149,19 @@ test.each(Object.entries({ ...clientMessages, ...serverMessages }))(
 );
 
 test('Connect is answered with the Ack fixture', () => {
-  const { ws, sent } = fakeSocket();
+  const socket = fakeSocket();
 
-  receive(ws, 'client-connect.json');
+  receive(socket, readFixture('client-connect.json'));
 
-  expect(sent).toEqual([JSON.parse(readFixture('server-ack.json'))]);
+  expect(socket.sent).toEqual([JSON.parse(readFixture('server-ack.json'))]);
 });
 
 test('ListRooms (a bare-string unit variant) is dispatched', () => {
-  const { ws, sent } = fakeSocket();
+  const socket = connected('user-a');
 
-  receive(ws, 'client-list-rooms.json');
+  receive(socket, readFixture('client-list-rooms.json'));
 
-  expect(sent).toEqual([
+  expect(socket.sent).toEqual([
     { user_id: 'user-a', command: { Server: { RoomList: [] } } },
   ]);
 });
@@ -150,9 +171,21 @@ test.each([
   ['client-send-answer.json', 'server-incoming-answer.json'],
   ['client-send-ice-candidate.json', 'server-incoming-ice-candidate.json'],
 ])('%s is relayed as %s', (input, output) => {
-  const { ws, published } = fakeSocket();
+  const clients: Record<string, FakeSocket> = {
+    'user-a': connected('user-a'),
+    'user-b': connected('user-b'),
+  };
 
-  receive(ws, input);
+  db.run("INSERT INTO rooms (id, name) VALUES ('room-1', 'lobby')");
+  setUserRoom('user-a', 'room-1');
+  setUserRoom('user-b', 'room-1');
 
-  expect(published).toEqual([JSON.parse(readFixture(output))]);
+  const sender = JSON.parse(readFixture(input)).user_id as string;
+  const expected = JSON.parse(readFixture(output));
+
+  receive(clients[sender], readFixture(input));
+
+  // Only the target receives it, addressed to itself.
+  expect(clients[expected.user_id].sent).toEqual([expected]);
+  expect(clients[sender].sent).toEqual([]);
 });

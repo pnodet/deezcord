@@ -1,32 +1,20 @@
-import { prepareCommand } from '../send';
-import type { WSContext } from 'hono/ws';
+import { canSignal } from '../../db';
+import { sendTo } from '../send';
 import type { ClientCommand } from '../mod-client';
-import type { ServerWebSocket } from 'bun';
 
 export const handleSendAnswer = (
-  ws: WSContext,
+  userId: string,
   cmd: ClientCommand<'SendAnswer'>,
 ) => {
-  const data = cmd.command.Client.SendAnswer;
-  const roomId = data[1];
+  const [targetId, roomId, sdp] = cmd.command.Client.SendAnswer;
 
-  const rws = ws.raw as ServerWebSocket;
+  if (!canSignal(userId, targetId, roomId)) {
+    console.warn(
+      `Dropping SendAnswer from ${userId} to ${targetId} in ${roomId}`,
+    );
 
-  rws.subscribe(roomId);
-
-  const res = rws.publish(
-    roomId,
-    prepareCommand({
-      user_id: data[0],
-      command: {
-        Server: {
-          IncomingAnswer: [cmd.user_id, roomId, data[2]],
-        },
-      },
-    }),
-  );
-
-  if (res === 0) {
-    throw new Error('Failed to publish answer');
+    return;
   }
+
+  sendTo(targetId, { IncomingAnswer: [userId, roomId, sdp] });
 };
