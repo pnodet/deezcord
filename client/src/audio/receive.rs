@@ -54,7 +54,11 @@ async fn decode_and_play(track: Arc<TrackRemote>) -> Result<()> {
         let Ok(len) = decoder.decode_float(&packet.payload, &mut pcm, false) else {
             continue; // skip a corrupt packet
         };
-        push_bounded(&mut buffer.lock().unwrap(), &pcm[..len], MAX_BUFFERED_SAMPLES);
+        push_bounded(
+            &mut buffer.lock().unwrap(),
+            &pcm[..len],
+            MAX_BUFFERED_SAMPLES,
+        );
     }
 
     Ok(())
@@ -108,11 +112,16 @@ mod tests {
             .collect();
         let mut packet = [0u8; 4000];
         let len = encoder.encode_float(&input, &mut packet).unwrap();
-        assert!(len > 0 && len < 1200, "an encoded frame must fit one RTP packet");
+        assert!(
+            len > 0 && len < 1200,
+            "an encoded frame must fit one RTP packet"
+        );
 
         let mut decoder = opus::Decoder::new(SAMPLE_RATE, opus::Channels::Mono).unwrap();
         let mut pcm = vec![0f32; MAX_PACKET_SAMPLES];
-        let decoded = decoder.decode_float(&packet[..len], &mut pcm, false).unwrap();
+        let decoded = decoder
+            .decode_float(&packet[..len], &mut pcm, false)
+            .unwrap();
         assert_eq!(decoded, FRAME_SAMPLES);
     }
 }
