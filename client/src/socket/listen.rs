@@ -6,6 +6,7 @@ use crate::peer::{
     handle_offer::handle_offer,
 };
 use crate::rooms::{display_empty_room, display_room, display_rooms};
+use crate::socket::{WsReader, WsWriter};
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
@@ -17,18 +18,14 @@ use std::sync::{
     Arc,
 };
 use tokio::sync::{watch, Mutex};
-use tokio_tungstenite::WebSocketStream;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::{sdp::session_description::RTCSessionDescription, RTCPeerConnection};
 
 pub async fn listen_for_ws(
     tx: Sender<()>,
     user: Arc<UserConfig>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
+    mut ws_read: WsReader,
+    ws_stream: WsWriter,
 ) -> Result<()> {
     let peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -59,10 +56,7 @@ pub async fn listen_for_ws(
 
     loop {
         let mut stdout = stdout();
-        let msg = {
-            let mut ws_stream = ws_stream.lock().await;
-            ws_stream.next().await
-        };
+        let msg = ws_read.next().await;
 
         if msg.is_none() {
             break Ok(());

@@ -3,6 +3,7 @@ use crate::audio::send::send_audio;
 use crate::commands::{ClientCommand, Command, CommandMessage};
 use crate::peer::create::create_peer_connection;
 use crate::socket::send::send_message;
+use crate::socket::WsWriter;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::io::stdout;
@@ -31,13 +32,7 @@ pub async fn handle_offer(
     username: &str,
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
     ice_candidates: Arc<Mutex<HashMap<String, Vec<RTCIceCandidateInit>>>>,
-    ws_stream: Arc<
-        Mutex<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-        >,
-    >,
+    ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
     rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
 ) -> Result<()> {
