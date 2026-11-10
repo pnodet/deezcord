@@ -11,10 +11,10 @@ use termion::cursor::DetectCursorPos;
 use termion::raw::IntoRawMode;
 use termion::{event::Key, input::TermRead};
 use tokio::sync::Mutex;
-use tokio_tungstenite::WebSocketStream;
 use webrtc::peer_connection::RTCPeerConnection;
 
 use crate::peer::connect_peer::connect_peer;
+use crate::socket::WsWriter;
 use crate::{
     commands::{ClientCommand, Command, CommandMessage},
     config::UserConfig,
@@ -45,11 +45,7 @@ pub async fn join_room(
     room: Room,
     user: Arc<UserConfig>,
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
+    ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
     rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
 ) -> Result<()> {
@@ -84,11 +80,7 @@ pub async fn display_rooms(
     rooms: Vec<Room>,
     user: Arc<UserConfig>,
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
+    ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
     rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
 ) -> Result<()> {
@@ -142,11 +134,7 @@ pub async fn display_rooms(
 pub async fn display_empty_room(
     tx: Sender<()>,
     user: Arc<UserConfig>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
+    ws_stream: WsWriter,
 ) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(
@@ -181,14 +169,7 @@ pub async fn display_empty_room(
     Ok(())
 }
 
-pub async fn create_room(
-    user: Arc<UserConfig>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
-) -> Result<()> {
+pub async fn create_room(user: Arc<UserConfig>, ws_stream: WsWriter) -> Result<()> {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(stdout, "\n\rEnter the room name:\n\r",).unwrap();
 
@@ -244,11 +225,7 @@ pub async fn connect_to_room_users(
     room: Room,
     user: Arc<UserConfig>,
     peer_connections: Arc<Mutex<HashMap<String, Arc<RTCPeerConnection>>>>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
+    ws_stream: WsWriter,
     watch_tx: tokio::sync::watch::Sender<()>,
     rx_audio: Arc<Mutex<Receiver<Vec<u8>>>>,
 ) -> Result<()> {

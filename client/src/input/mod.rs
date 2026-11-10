@@ -5,20 +5,12 @@ use termion::async_stdin;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
-use tokio_tungstenite::WebSocketStream;
 
 use crate::config::UserConfig;
 use crate::rooms::create_room;
+use crate::socket::WsWriter;
 
-pub async fn _listen_for_input(
-    tx: Sender<()>,
-    user: Arc<UserConfig>,
-    ws_stream: Arc<
-        tokio::sync::Mutex<
-            WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-        >,
-    >,
-) {
+pub async fn _listen_for_input(tx: Sender<()>, user: Arc<UserConfig>, ws_stream: WsWriter) {
     let mut stdout = stdout().into_raw_mode().unwrap();
     write!(
         stdout,

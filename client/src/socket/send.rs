@@ -1,20 +1,13 @@
 use crate::commands::CommandMessage;
+use crate::socket::WsWriter;
 use futures_util::SinkExt;
 use std::error::Error;
 use std::io::{stdout, Write};
-use std::sync::Arc;
 use termion::raw::IntoRawMode;
-use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
 pub async fn send_message(
-    ws_stream: Arc<
-        Mutex<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-        >,
-    >,
+    ws_stream: WsWriter,
     message: &CommandMessage,
 ) -> Result<(), Box<dyn Error>> {
     let msg_text = serde_json::to_string(&message)?;

@@ -12,6 +12,7 @@ use crate::socket::listen::listen_for_ws;
 use crate::socket::send::send_message;
 
 use config::load_user;
+use futures_util::StreamExt;
 use std::io::{stdout, Write};
 use std::sync::{mpsc, Arc};
 use tokio::sync::Mutex;
@@ -25,7 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user = Arc::new(load_user()?);
 
     let (ws_stream, _) = connect_async(SERVER_URL).await.expect("Failed to connect");
-    let ws_stream = Arc::new(Mutex::new(ws_stream));
+    let (ws_write, mut ws_read) = ws_stream.split();
+    let ws_stream = Arc::new(Mutex::new(ws_write));
 
     send_message(
         ws_stream.clone(),
@@ -35,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )
     .await?;
-    wait_for_ack(ws_stream.clone()).await?;
+    wait_for_ack(&mut ws_read).await?;
 
     send_message(
         ws_stream.clone(),
@@ -56,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `tx` moves into the listener: once the listener ends (returns or panics) no
     // sender is left, so `rx.recv()` returns `Err` instead of blocking forever.
-    let listener = tokio::spawn(listen_for_ws(tx, user, ws_stream));
+    let listener = tokio::spawn(listen_for_ws(tx, user, ws_read, ws_stream));
 
     let quit_requested = rx.recv().is_ok();
 
