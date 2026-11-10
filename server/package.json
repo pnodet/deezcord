@@ -1,7 +1,10 @@
 {
   "name": "@deezcord/server",
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "bun test"
   },
   "dependencies": {
     "hono": "^4.5.5",
@@ -15,7 +18,8 @@
     "@types/bun": "latest",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.9.0",
-    "prettier": "^3.3.3"
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
   },
   "prettier": "@nivalis/prettier-config"
 }
