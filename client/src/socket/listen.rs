@@ -7,7 +7,7 @@ use crate::peer::{
 };
 use crate::rooms::{display_empty_room, display_room, display_rooms};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::io::{stdout, Write};
@@ -68,15 +68,11 @@ pub async fn listen_for_ws(
             break Ok(());
         }
 
-        let msg = msg.unwrap();
-        if msg.is_err() {
-            write!(stdout, "\n\rError message: {:?}\n\r", msg).unwrap();
-            stdout.flush().unwrap();
-            tx.send(()).unwrap();
-            continue;
-        }
+        let msg = msg.unwrap().context("WebSocket connection failed")?;
 
-        let msg = msg.unwrap();
+        if msg.is_close() {
+            break Ok(());
+        }
 
         if msg.is_ping() || msg.is_pong() {
             continue;
@@ -97,7 +93,18 @@ pub async fn listen_for_ws(
 
         let text = text.unwrap();
 
-        let command_message: CommandMessage = serde_json::from_str(text).unwrap();
+        let command_message: CommandMessage = match serde_json::from_str(text) {
+            Ok(command_message) => command_message,
+            Err(e) => {
+                write!(
+                    stdout,
+                    "\n\rIgnoring unreadable server message ({e}): {text}\n\r"
+                )
+                .unwrap();
+                stdout.flush().unwrap();
+                continue;
+            }
+        };
 
         if command_message.user_id != user.id {
             continue;
@@ -106,14 +113,15 @@ pub async fn listen_for_ws(
         // write!(stdout, "\n\n*** Received ***\n{:?}", command_message).unwrap();
         // stdout.flush().unwrap();
 
-        match command_message.command {
+        let handled: Result<()> = match command_message.command {
             Command::Server(ServerCommand::RoomList(rooms)) => {
                 let current_room = rooms.iter().find(|room| room.users.contains(&user.id));
 
                 if let Some(current_room) = current_room {
                     display_room(current_room.clone(), 0);
+                    Ok(())
                 } else if rooms.is_empty() {
-                    display_empty_room(tx.clone(), user.clone(), ws_stream.clone()).await?;
+                    display_empty_room(tx.clone(), user.clone(), ws_stream.clone()).await
                 } else {
                     display_rooms(
                         rooms,
@@ -123,7 +131,7 @@ pub async fn listen_for_ws(
                         watch_tx.clone(),
                         rx_audio.clone(),
                     )
-                    .await?;
+                    .await
                 }
             }
 
@@ -131,35 +139,44 @@ pub async fn listen_for_ws(
                 from_user,
                 _room_id,
                 candidate,
-            )) => {
-                handle_ice_candidate(from_user, candidate, ice_candidates.clone()).await?;
-            }
+            )) => handle_ice_candidate(from_user, candidate, ice_candidates.clone()).await,
 
             Command::Server(ServerCommand::IncomingAnswer(from_user, _room_id, sdp)) => {
-                handle_answer(from_user, sdp, peer_connections.clone()).await?;
+                handle_answer(from_user, sdp, peer_connections.clone()).await
             }
 
             Command::Server(ServerCommand::IncomingOffer(from_user, room_id, sdp)) => {
-                let offer = RTCSessionDescription::offer(sdp)?;
-
-                handle_offer(
-                    from_user,
-                    room_id,
-                    offer,
-                    &user.id,
-                    peer_connections.clone(),
-                    ice_candidates.clone(),
-                    ws_stream.clone(),
-                    watch_tx.clone(),
-                    rx_audio.clone(),
-                )
-                .await?;
+                match RTCSessionDescription::offer(sdp) {
+                    Ok(offer) => {
+                        handle_offer(
+                            from_user,
+                            room_id,
+                            offer,
+                            &user.id,
+                            peer_connections.clone(),
+                            ice_candidates.clone(),
+                            ws_stream.clone(),
+                            watch_tx.clone(),
+                            rx_audio.clone(),
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e.into()),
+                }
             }
 
             _ => {
                 write!(stdout, "\n\rUnexpected message: {:?}", command_message).unwrap();
                 stdout.flush().unwrap();
+                Ok(())
             }
+        };
+
+        // A failed handler only affects that one message (one room action or one peer
+        // handshake), so report it and keep listening.
+        if let Err(e) = handled {
+            write!(stdout, "\n\rFailed to handle server message: {e:#}\n\r").unwrap();
+            stdout.flush().unwrap();
         }
 
         watch_tx.send(()).unwrap();
