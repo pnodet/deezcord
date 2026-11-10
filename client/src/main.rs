@@ -15,6 +15,7 @@ use config::{create_config, get_user_or_create};
 use std::io::{stdout, Write};
 use std::sync::{mpsc, Arc};
 use tokio::sync::Mutex;
+use tokio::task::JoinError;
 use tokio_tungstenite::connect_async;
 use uuid::Uuid;
 
@@ -61,21 +62,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     tokio::spawn(async move { listen_for_input(tx, user, ws_stream).await });
     // }
 
-    {
-        let tx = tx.clone();
-        let user = user.clone();
-        let ws_stream = ws_stream.clone();
+    // `tx` moves into the listener: once the listener ends (returns or panics) no
+    // sender is left, so `rx.recv()` returns `Err` instead of blocking forever.
+    let listener = tokio::spawn(listen_for_ws(tx, user, ws_stream));
 
-        tokio::spawn(async move {
-            let _ = listen_for_ws(tx, user, ws_stream).await;
-        });
-    }
-
-    rx.recv().unwrap();
+    let quit_requested = rx.recv().is_ok();
 
     let mut stdout = stdout();
-    write!(stdout, "Shutting down...").unwrap();
+    if quit_requested {
+        write!(stdout, "Shutting down...").unwrap();
+        stdout.flush().unwrap();
+        return Ok(());
+    }
 
-    stdout.flush().unwrap();
-    Ok(())
+    match listener_exit(listener.await) {
+        Ok(()) => {
+            write!(
+                stdout,
+                "\n\rServer closed the connection. Shutting down.\n\r"
+            )
+            .unwrap();
+            stdout.flush().unwrap();
+            Ok(())
+        }
+        Err(reason) => {
+            eprintln!("\n\r{reason}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Maps how the listener task ended to main's exit: `Ok` for a clean close by the
+/// server, `Err(reason)` for an exit with a non-zero status.
+fn listener_exit(joined: Result<anyhow::Result<()>, JoinError>) -> Result<(), String> {
+    match joined {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(format!("Lost the connection to the server: {e:#}")),
+        Err(e) if e.is_panic() => Err("The client crashed (panic message above).".to_string()),
+        Err(e) => Err(format!("The server listener stopped: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::listener_exit;
+
+    #[test]
+    fn clean_close_exits_ok() {
+        assert_eq!(listener_exit(Ok(Ok(()))), Ok(()));
+    }
+
+    #[test]
+    fn listener_error_exits_with_reason() {
+        let reason = listener_exit(Ok(Err(anyhow::anyhow!("connection reset")))).unwrap_err();
+        assert!(reason.contains("connection reset"), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn listener_panic_exits_with_reason() {
+        let joined = tokio::spawn(async { panic!("boom") }).await;
+        assert!(listener_exit(joined).unwrap_err().contains("crashed"));
+    }
 }
