@@ -1,0 +1,1 @@
+{"user_id":"user-a","command":{"Client":{"SendIceCandidate":["user-b","room-1","{\"candidate\":\"candidate:1 1 udp 2130706431 192.0.2.1 50000 typ host\",\"sdpMid\":\"\",\"sdpMLineIndex\":0,\"usernameFragment\":null}"]}}}
