@@ -1,7 +1,10 @@
 import { Database } from 'bun:sqlite';
 import { v7 as uuid } from 'uuid';
 
-const db = new Database('deezcord.sqlite', { create: true, strict: true });
+const db = new Database(process.env.DEEZCORD_DB ?? 'deezcord.sqlite', {
+  create: true,
+  strict: true,
+});
 
 db.run('PRAGMA journal_mode = WAL;');
 

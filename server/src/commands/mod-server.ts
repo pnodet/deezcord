@@ -9,10 +9,13 @@ export type ServerCommandKeys =
   | 'IncomingAnswer'
   | 'IncomingIceCandidate';
 
+// Mirrors `ServerCommand` in client/src/commands/mod.rs.
 export type ServerCommandData = {
+  // Rust unit variant. serde writes it as `"Ack"` but also accepts the
+  // `{ "Ack": null }` the server sends.
   Ack: null;
-  ConnectedAs: null;
-  Refresh: null;
+  ConnectedAs: string;
+  Refresh: string[];
   RoomList: Room[];
   IncomingOffer: [
     string, // user_id

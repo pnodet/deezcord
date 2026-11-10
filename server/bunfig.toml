@@ -1,0 +1,3 @@
+[test]
+# Runs before any test file is loaded, so the db module opens an in-memory database.
+preload = ["./test-setup.ts"]

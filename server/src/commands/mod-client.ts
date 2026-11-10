@@ -8,14 +8,13 @@ export type ClientCommandKeys =
   | 'SendAnswer'
   | 'SendIceCandidate';
 
+// Payloads of the Rust tuple variants in client/src/commands/mod.rs.
+// `ListRooms` and `Leave` are Rust unit variants: they have no payload and
+// serde sends them as a bare string, e.g. `{ "Client": "ListRooms" }`.
 export type ClientCommandData = {
-  ListRooms: null;
   Connect: string;
   CreateRoom: string;
   Join: string;
-  Leave: {
-    room: string;
-  };
   SendOffer: [
     string, // user_id
     string, // room_id
@@ -35,5 +34,9 @@ export type ClientCommandData = {
 
 export type ClientCommand<K extends ClientCommandKeys> = {
   user_id: string;
-  command: { Client: { [P in K]: ClientCommandData[K] } };
+  command: {
+    Client: K extends keyof ClientCommandData
+      ? { [P in K]: ClientCommandData[P] }
+      : K;
+  };
 };
