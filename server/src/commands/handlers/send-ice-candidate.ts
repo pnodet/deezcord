@@ -1,32 +1,20 @@
-import { prepareCommand } from '../send';
-import type { WSContext } from 'hono/ws';
+import { canSignal } from '../../db';
+import { sendTo } from '../send';
 import type { ClientCommand } from '../mod-client';
-import type { ServerWebSocket } from 'bun';
 
 export const handleSendIceCandidate = (
-  ws: WSContext,
+  userId: string,
   cmd: ClientCommand<'SendIceCandidate'>,
 ) => {
-  const data = cmd.command.Client.SendIceCandidate;
-  const roomId = data[1];
+  const [targetId, roomId, candidate] = cmd.command.Client.SendIceCandidate;
 
-  const rws = ws.raw as ServerWebSocket;
+  if (!canSignal(userId, targetId, roomId)) {
+    console.warn(
+      `Dropping SendIceCandidate from ${userId} to ${targetId} in ${roomId}`,
+    );
 
-  rws.subscribe(roomId);
-
-  const res = rws.publish(
-    roomId,
-    prepareCommand({
-      user_id: data[0],
-      command: {
-        Server: {
-          IncomingIceCandidate: [cmd.user_id, roomId, data[2]],
-        },
-      },
-    }),
-  );
-
-  if (res === 0) {
-    throw new Error('Failed to publish IceCandidate');
+    return;
   }
+
+  sendTo(targetId, { IncomingIceCandidate: [userId, roomId, candidate] });
 };
