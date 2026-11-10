@@ -165,6 +165,12 @@ pub async fn listen_for_ws(
                 }
             }
 
+            Command::Server(ServerCommand::Error(message)) => {
+                write!(stdout, "\n\rServer error: {message}\n\r").unwrap();
+                stdout.flush().unwrap();
+                Ok(())
+            }
+
             _ => {
                 write!(stdout, "\n\rUnexpected message: {:?}", command_message).unwrap();
                 stdout.flush().unwrap();

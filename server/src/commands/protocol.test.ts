@@ -87,6 +87,10 @@ const serverMessages = {
       Server: { IncomingIceCandidate: ['user-a', 'room-1', CANDIDATE] },
     },
   } satisfies ServerCommand<'IncomingIceCandidate'>,
+  'server-error.json': {
+    user_id: 'user-a',
+    command: { Server: { Error: 'Room not found' } },
+  } satisfies ServerCommand<'Error'>,
 };
 
 // One fake connection: what the server sends to it, and its per-socket state.
