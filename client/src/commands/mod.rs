@@ -48,6 +48,7 @@ pub enum ServerCommand {
         String, // room_id
         String, // candidate
     ),
+    Error(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -159,5 +160,9 @@ mod tests {
             }
             other => panic!("unexpected {:?}", other),
         }
+        assert!(matches!(
+            server_fixture(fixture!("server-error.json")),
+            ServerCommand::Error(message) if message == "Room not found"
+        ));
     }
 }

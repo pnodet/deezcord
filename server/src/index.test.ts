@@ -141,17 +141,64 @@ test('room membership, targeted signaling and disconnect cleanup', async () => {
   alice.ws.close();
 });
 
-test('commands before Connect are ignored', async () => {
+const rawSocket = async () => {
   const ws = new WebSocket(`ws://localhost:${port}/ws`);
-  const inbox: string[] = [];
+  const inbox: Envelope[] = [];
 
-  ws.onmessage = event => inbox.push(String(event.data));
+  ws.onmessage = event => inbox.push(JSON.parse(String(event.data)));
   await new Promise(resolve => (ws.onopen = resolve));
+
+  return { ws, inbox };
+};
+
+test('commands before Connect get an Error reply', async () => {
+  const { ws, inbox } = await rawSocket();
+
   ws.send(
     JSON.stringify({ user_id: 'mallory', command: { Client: 'ListRooms' } }),
   );
   await Bun.sleep(200);
 
-  expect(inbox).toEqual([]);
+  expect(inbox).toEqual([
+    {
+      user_id: 'mallory',
+      command: { Server: { Error: 'Send Connect first' } },
+    },
+  ]);
   ws.close();
+});
+
+test('malformed messages get an Error reply and the socket keeps working', async () => {
+  const dave = await connect('dave');
+
+  for (const bad of [
+    'not json',
+    '{}',
+    JSON.stringify({ user_id: 'dave', command: { Client: { Join: 5 } } }),
+    JSON.stringify({ user_id: 'dave', command: { Client: { Nope: 'x' } } }),
+    JSON.stringify({
+      user_id: 'dave',
+      command: { Client: { SendOffer: ['a', 'b'] } },
+    }),
+  ]) {
+    dave.ws.send(bad);
+    expect(await dave.next('Error')).toEqual({
+      user_id: 'dave',
+      command: { Server: { Error: 'Invalid message' } },
+    });
+  }
+
+  dave.send({ Join: 'no-such-room' });
+  expect((await dave.next('Error')).command.Server.Error).toBe(
+    'Room not found',
+  );
+
+  dave.send({ SendOffer: ['nobody', 'no-such-room', 'sdp'] });
+  expect((await dave.next('Error')).command.Server.Error).toBe(
+    'Cannot signal this user',
+  );
+
+  dave.send('ListRooms');
+  expect((await dave.next('RoomList')).user_id).toBe('dave');
+  dave.ws.close();
 });

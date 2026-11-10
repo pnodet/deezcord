@@ -12,6 +12,7 @@ export const handleSendAnswer = (
     console.warn(
       `Dropping SendAnswer from ${userId} to ${targetId} in ${roomId}`,
     );
+    sendTo(userId, { Error: 'Cannot signal this user' });
 
     return;
   }
