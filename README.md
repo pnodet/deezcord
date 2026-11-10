@@ -35,3 +35,19 @@ cd client && cargo check && cargo test
 `cd server && bun run lint` runs ESLint. It still reports existing problems and is not part of the gate yet.
 
 When you change a WebSocket message, update both type definitions (`server/src/commands/mod-*.ts` and `client/src/commands/mod.rs`), the matching file in `protocol-fixtures/`, and both tests (`server/src/commands/protocol.test.ts` and the `tests` module in `client/src/commands/mod.rs`).
+
+## Running two clients on one machine
+
+The client normally loads the user saved in its config file and asks for a name only on the first
+launch. The file is `deezcord/config.json` in your data directory:
+`~/Library/Application Support/deezcord/config.json` on macOS, `~/.local/share/deezcord/config.json`
+on Linux.
+
+Two clients on the same machine would share that user. Start any extra client with a throwaway user
+that is never saved:
+
+```sh
+cd client && DEEZCORD_EPHEMERAL=1 cargo run
+```
+
+Only the value `1` turns this on.
