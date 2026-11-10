@@ -6,6 +6,7 @@ mod peer;
 mod rooms;
 mod socket;
 
+use crate::audio::capture::start_capture;
 use crate::commands::wait_for_ack::wait_for_ack;
 use crate::commands::{ClientCommand, Command, CommandMessage};
 use crate::socket::listen::listen_for_ws;
@@ -24,6 +25,9 @@ const SERVER_URL: &str = "ws://localhost:3030/ws";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user = Arc::new(load_user()?);
+
+    // `_capture` keeps the microphone running until main returns.
+    let (audio_tx, _capture) = start_capture()?;
 
     let (ws_stream, _) = connect_async(SERVER_URL).await.expect("Failed to connect");
     let (ws_write, mut ws_read) = ws_stream.split();
@@ -58,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `tx` moves into the listener: once the listener ends (returns or panics) no
     // sender is left, so `rx.recv()` returns `Err` instead of blocking forever.
-    let listener = tokio::spawn(listen_for_ws(tx, user, ws_read, ws_stream));
+    let listener = tokio::spawn(listen_for_ws(tx, user, ws_read, ws_stream, audio_tx));
 
     let quit_requested = rx.recv().is_ok();
 
