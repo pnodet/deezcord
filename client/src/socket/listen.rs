@@ -133,10 +133,24 @@ pub async fn listen_for_ws(
                 from_user,
                 _room_id,
                 candidate,
-            )) => handle_ice_candidate(from_user, candidate, ice_candidates.clone()).await,
+            )) => {
+                handle_ice_candidate(
+                    from_user,
+                    candidate,
+                    peer_connections.clone(),
+                    ice_candidates.clone(),
+                )
+                .await
+            }
 
             Command::Server(ServerCommand::IncomingAnswer(from_user, _room_id, sdp)) => {
-                handle_answer(from_user, sdp, peer_connections.clone()).await
+                handle_answer(
+                    from_user,
+                    sdp,
+                    peer_connections.clone(),
+                    ice_candidates.clone(),
+                )
+                .await
             }
 
             Command::Server(ServerCommand::IncomingOffer(from_user, room_id, sdp)) => {
