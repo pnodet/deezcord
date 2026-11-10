@@ -12,6 +12,7 @@ export const handleSendIceCandidate = (
     console.warn(
       `Dropping SendIceCandidate from ${userId} to ${targetId} in ${roomId}`,
     );
+    sendTo(userId, { Error: 'Cannot signal this user' });
 
     return;
   }

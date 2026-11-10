@@ -6,7 +6,9 @@ import { handleListRooms } from './handlers/list-rooms';
 import { handleSendAnswer } from './handlers/send-answer';
 import { handleSendIceCandidate } from './handlers/send-ice-candidate';
 import { handleSendOffer } from './handlers/send-offer';
-import { sendRoomListToMembers, sockets } from './send';
+import { VClientMessage } from './mod-client';
+import { prepareCommand, sendRoomListToMembers, sockets } from './send';
+import { safeParse } from 'valibot';
 import type { ClientCommand, ClientCommandKeys } from './mod-client';
 import type { WSContext, WSMessageReceive } from 'hono/ws';
 
@@ -15,14 +17,32 @@ import type { WSContext, WSMessageReceive } from 'hono/ws';
 // ignored, so a socket can only act as the user it connected as.
 export type Session = { userId: string | null };
 
-export const onMessage = (
-  evt: MessageEvent<WSMessageReceive>,
+// Replies on `ws` only. The message is shown to the user: never put error
+// details, stack traces or SQL in it.
+const sendError = (ws: WSContext, userId: string, message: string) => {
+  ws.send(
+    prepareCommand({
+      user_id: userId,
+      command: { Server: { Error: message } },
+    }),
+  );
+};
+
+const parseMessage = (data: WSMessageReceive) => {
+  try {
+    const result = safeParse(VClientMessage, JSON.parse(String(data)));
+
+    return result.success ? result.output : null;
+  } catch {
+    return null;
+  }
+};
+
+const dispatch = (
+  commandMessage: ClientCommand<ClientCommandKeys>,
   ws: WSContext,
   session: Session,
-): void => {
-  const commandMessage = JSON.parse(
-    evt.data as string,
-  ) as ClientCommand<ClientCommandKeys>;
+) => {
   const command =
     typeof commandMessage.command.Client === 'string'
       ? commandMessage.command.Client
@@ -40,6 +60,7 @@ export const onMessage = (
 
   if (!userId) {
     console.warn(`Ignoring ${command}, socket has not sent Connect`);
+    sendError(ws, commandMessage.user_id, 'Send Connect first');
 
     return;
   }
@@ -96,6 +117,32 @@ export const onMessage = (
 
       break;
     }
+  }
+};
+
+export const onMessage = (
+  evt: MessageEvent<WSMessageReceive>,
+  ws: WSContext,
+  session: Session,
+): void => {
+  const commandMessage = parseMessage(evt.data);
+
+  if (!commandMessage) {
+    console.warn('Rejected invalid message', evt.data);
+    sendError(ws, session.userId ?? '', 'Invalid message');
+
+    return;
+  }
+
+  try {
+    dispatch(commandMessage as ClientCommand<ClientCommandKeys>, ws, session);
+  } catch (error) {
+    console.error('Command failed', error);
+    sendError(
+      ws,
+      session.userId ?? commandMessage.user_id,
+      'Internal server error',
+    );
   }
 };
 

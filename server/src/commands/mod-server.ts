@@ -7,7 +7,8 @@ export type ServerCommandKeys =
   | 'RoomList'
   | 'IncomingOffer'
   | 'IncomingAnswer'
-  | 'IncomingIceCandidate';
+  | 'IncomingIceCandidate'
+  | 'Error';
 
 // Mirrors `ServerCommand` in client/src/commands/mod.rs.
 export type ServerCommandData = {
@@ -32,6 +33,7 @@ export type ServerCommandData = {
     string, // room_id
     string, // candidate
   ];
+  Error: string;
 };
 
 export type ServerCommand<K extends ServerCommandKeys> = {
